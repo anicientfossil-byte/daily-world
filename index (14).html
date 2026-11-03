@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Daily World</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Playfair+Display:wght@700;900&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+:root{--ink:#1a1a1a;--paper:#EFE4CC;--navy:#14213D;--cream:#F3EBDD;--coffee:#4a3a2c}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--navy)}
+body{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px 12px 40px}
+#msg{font:14px/1.4 'Libre Baskerville',serif;color:var(--cream);margin:0 0 12px;max-width:720px;text-align:center}
+#msg:empty{display:none}
+#dl{position:fixed;top:12px;right:12px;width:44px;height:44px;padding:0;border:2px solid var(--cream);background:var(--cream);color:var(--navy);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5}
+#dl:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#dl[disabled]{opacity:.5;cursor:wait}
+#wrap{position:relative}
+#page{width:720px;height:1008px;background:var(--paper);padding:20px;transform-origin:0 0;overflow:hidden;color:var(--ink)}
+.in{height:100%;border:3px double var(--ink);padding:12px 16px 8px;display:flex;flex-direction:column}
+.mast{display:grid;grid-template-columns:104px 1fr 104px;align-items:center;border-bottom:3px double var(--ink);padding-bottom:8px}
+.ear{border:1px solid var(--ink);padding:5px;text-align:center;font:italic 9.5px/1.4 'Libre Baskerville',serif}
+.title{text-align:center;font:700 54px/1 'UnifrakturCook',serif}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr}
+.hd{font:900 15px/1.08 'Playfair Display',serif;margin:0}
+.bd{font:10px/1.45 'Libre Baskerville',serif;margin:4px 0 0;text-align:justify;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.src{font:italic 9px/1.3 'Libre Baskerville',serif;color:var(--coffee);margin:4px 0 0}
+.tag{font:700 8.5px 'Libre Baskerville',serif;letter-spacing:.14em;text-transform:uppercase;border-bottom:1px solid var(--ink);padding-bottom:2px;margin-bottom:5px}
+.s{padding:8px 10px;border-top:1px solid var(--ink)}
+.lead{grid-column:1/span 2;padding:6px 12px 8px 0;border-right:1px solid var(--ink)}
+.lead .hd{font-size:32px}.lead .tag,.lead .src{text-align:center}
+.lead .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
+.lead .bd{-webkit-line-clamp:7;margin:0}
+.col+.col{border-left:1px solid var(--ink)}
+.briefs{border:2px solid var(--ink);margin-top:8px;padding:6px 10px 2px;flex:1;overflow:hidden}
+.briefs h3{font:700 11px 'Playfair Display',serif;letter-spacing:.24em;text-align:center;border-bottom:1px solid var(--ink);padding-bottom:4px;margin:0 0 6px}
+.briefs div{columns:3;column-gap:16px}
+.br{font:10px/1.35 'Libre Baskerville',serif;margin:0 0 5px;break-inside:avoid;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.br i{color:var(--coffee);font-size:9px}
+.foot{padding-top:5px;text-align:center;font:italic 9px 'Libre Baskerville',serif;color:var(--coffee)}
+</style>
+</head>
+<body>
+<button id="dl" aria-label="Download this front page as a PNG" disabled>
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" aria-hidden="true"><path d="M12 3v12M6 10l6 6 6-6M4 20h16"/></svg>
+</button>
+<p id="msg" role="status">Loading the latest edition…</p>
+<div id="wrap"><main id="page" aria-label="Front page"></main></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script>
+// ====== EDIT THIS ONE LINE: your Worker address (no slash at the end) ======
+const WORKER_URL = "https://daily-world.anicientfossil.workers.dev";
+
+const FONT_CSS_URL = document.querySelector('link[href*="fonts.googleapis.com/css2"]').href;
+const page = document.getElementById("page"), wrap = document.getElementById("wrap"), msg = document.getElementById("msg"), dl = document.getElementById("dl");
+const key = new URLSearchParams(location.search).get("key") || "";
+let slot = "evening", stamp = "edition";
+
+// Every piece of text goes in with textContent, so nothing from a feed can become HTML.
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+function byline(s) { return "Reported by " + s.sources.join(", ") + (s.state ? " · State agency" : ""); }
+function story(s, cls) {
+  const d = el("div", cls || "s");
+  d.append(el("div", "tag", s.region), el("h2", "hd", s.headline));
+  if (s.body) d.append(el("p", "bd", s.body));
+  d.append(el("p", "src", byline(s)));
+  return d;
+}
+
+function render(ed) {
+  slot = ed.slot;
+  const when = new Date(ed.builtAt);
+  const dateTxt = when.toLocaleDateString("en-GB", { timeZone: "Asia/Kathmandu", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  stamp = when.toLocaleDateString("en-CA", { timeZone: "Asia/Kathmandu" }) + "-" + ed.slot;
+  const inner = el("div", "in");
+
+  const m = el("div", "mast");
+  const l = el("div", "ear"); l.append("Evening Edition".replace("Evening", ed.slot === "morning" ? "Morning" : "Evening"), el("br"), ed.slot === "morning" ? "7 AM Nepal" : "7 PM Nepal");
+  const r = el("div", "ear"); r.append(dateTxt, el("br"), "The whole world");
+  m.append(l, el("div", "title", "The Daily World"), r);
+
+  const top = el("div", "grid"); top.style.marginTop = "8px";
+  const lead = el("div", "lead");
+  lead.append(el("div", "tag", "Lead · " + ed.lead.region), el("h1", "hd", ed.lead.headline), el("p", "src", byline(ed.lead)));
+  if (ed.lead.body) { const c = el("div", "cols"); c.append(el("p", "bd", ed.lead.body)); lead.append(c); }
+  const side = el("div");
+  ed.secondary.slice(0, 2).forEach(s => side.append(story(s)));
+  top.append(lead, side);
+
+  const rows = el("div", "grid"); rows.style.borderTop = "2px solid var(--ink)";
+  const cols = [el("div", "col"), el("div", "col"), el("div", "col")];
+  ed.secondary.slice(2).forEach((s, i) => cols[i % 3].append(story(s)));
+  rows.append(...cols);
+
+  const br = el("div", "briefs"); br.append(el("h3", "", "BRIEFS"));
+  const bw = el("div");
+  ed.briefs.forEach(b => { const p = el("p", "br", b.headline + " "); p.append(el("i", "", b.region)); bw.append(p); });
+  br.append(bw);
+
+  inner.append(m, top, rows, br, el("div", "foot", "Compiled automatically from public news feeds. Check the sources for full reports."));
+  page.replaceChildren(inner);
+
+  const hours = (Date.now() - when) / 36e5;
+  msg.textContent = hours > 20 ? "This edition is from " + dateTxt + ". A newer one is not ready yet." : "";
+  dl.disabled = false;
+  fit();
+}
+
+// Scale the fixed 3:4.2 page to the screen; export always uses the full size.
+function fit() {
+  const k = Math.min(1, (innerWidth - 24) / 720);
+  page.style.transform = "scale(" + k + ")";
+  wrap.style.width = 720 * k + "px"; wrap.style.height = 1008 * k + "px";
+}
+addEventListener("resize", fit);
+
+// Embed the Google Fonts as data so the PNG always has the right typefaces.
+let fontCss;
+async function fonts() {
+  if (fontCss) return fontCss;
+  let css = await (await fetch(FONT_CSS_URL)).text();
+  const urls = [...new Set([...css.matchAll(/url\((https:[^)]+)\)/g)].map(m => m[1]))];
+  await Promise.all(urls.map(async u => {
+    const b = await (await fetch(u)).blob();
+    const d = await new Promise(ok => { const f = new FileReader(); f.onload = () => ok(f.result); f.readAsDataURL(b); });
+    css = css.split(u).join(d);
+  }));
+  return (fontCss = css);
+}
+
+dl.addEventListener("click", async () => {
+  dl.disabled = true;
+  try {
+    await document.fonts.ready;
+    const opt = { pixelRatio: 2, cacheBust: true, width: 720, height: 1008, fontEmbedCSS: await fonts(), style: { transform: "none", margin: "0" } };
+    await htmlToImage.toPng(page, opt);          // first pass warms up iPhone Safari
+    const url = await htmlToImage.toPng(page, opt);
+    const a = document.createElement("a"); a.href = url; a.download = "daily-world-" + stamp + ".png"; a.click();
+  } catch { msg.textContent = "The download did not work. Try again."; }
+  dl.disabled = false;
+});
+
+// Load the newest edition; if that fails, show the last one this device saw.
+(async () => {
+  try {
+    const res = await fetch(WORKER_URL + "/latest?key=" + encodeURIComponent(key));
+    if (!res.ok) throw 0;
+    const ed = await res.json();
+    render(ed);
+    try { localStorage.setItem("dw-last", JSON.stringify(ed)); } catch {}
+  } catch {
+    let old = null;
+    try { old = JSON.parse(localStorage.getItem("dw-last")); } catch {}
+    if (old) { render(old); msg.textContent = "Could not reach the news service. Showing the last edition saved on this device."; }
+    else msg.textContent = "Could not load the edition. Check your link and try again in a few minutes.";
+  }
+})();
+</script>
+</body>
+</html>
